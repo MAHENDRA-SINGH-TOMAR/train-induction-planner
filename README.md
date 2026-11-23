@@ -69,6 +69,34 @@ The system consists of a **FastAPI backend** running a **Google OR-Tools MIP Opt
 
 ---
 
+## Deploying to Render (render.com)
+
+This repository includes [`render.yaml`](./render.yaml), [`requirements.txt`](./requirements.txt), and a production [`Dockerfile`](./Dockerfile).
+
+### Option 1: Automatic Blueprint (Recommended)
+1. Push this local repo to your GitHub:
+   ```bash
+   git remote add origin https://github.com/<your-username>/<your-repo-name>.git
+   git branch -M main
+   git push -u origin main
+   ```
+2. In Render dashboard ([dashboard.render.com](https://dashboard.render.com)):
+   - Click **New +** > **Blueprint**.
+   - Connect your GitHub repository.
+   - Render detects `render.yaml` and provisions the Web Service automatically.
+
+### Option 2: Manual Web Service Setup
+1. In Render dashboard, click **New +** > **Web Service**.
+2. Connect your repository.
+3. Configure settings:
+   - **Environment**: `Python 3`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `uvicorn server:app --host 0.0.0.0 --port $PORT`
+   - **Health Check Path**: `/healthz`
+4. Click **Create Web Service**. Render assigns a free public URL (e.g. `https://railoptix-train-induction.onrender.com`).
+
+---
+
 ## REST API Endpoints
 
 The server runs on `http://localhost:3000`. You can also explore the live interactive Swagger documentation at **[http://localhost:3000/docs](http://localhost:3000/docs)**.
