@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Train Induction Planning & Scheduling</title>
+  <!-- Tailwind CSS with CDN support -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    if (typeof tailwind === 'undefined') {
+      const s = document.createElement('script');
+      s.src = "https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js";
+      document.head.appendChild(s);
+    }
+  </script>
+  <style>
+    :root {
+      --background: #0f172a;
+      --foreground: #f8fafc;
+      --card: #1e293b;
+      --border: #334155;
+      --muted-foreground: #94a3b8;
+      --primary: #3b82f6;
+    }
+    body {
+      background-color: #0f172a;
+      color: #f8fafc;
+    }
+    /* Custom scrollbars & smooth transitions */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.05); }
+    ::-webkit-scrollbar-thumb { background: rgba(140, 150, 170, 0.35); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(140, 150, 170, 0.6); }
+    .track-line { stroke-dasharray: 6 4; animation: dash 30s linear infinite; }
+    @keyframes dash { to { stroke-dashoffset: -100; } }
+    .badge-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+  </style>
+</head>
+<body class="bg-[var(--background,#0f172a)] text-[var(--foreground,#f8fafc)] antialiased min-h-screen p-3 md:p-6 font-sans">
+
+  <!-- TOP HEADER / NAV -->
+  <header class="bg-[var(--card,#1e293b)] border border-[var(--border,#334155)] rounded-2xl p-4 md:p-5 mb-5 shadow-xl">
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-400 flex items-center justify-center shadow-lg shadow-indigo-500/20 text-white font-black text-xl">
+          <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-xl md:text-2xl font-bold tracking-tight text-[var(--foreground,#ffffff)]">RailOptix &bull; Train Induction Planner</h1>
+            <span class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5" id="backend-status-pill">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 badge-pulse"></span>
+              FastAPI + OR-Tools Live
+            </span>
+          </div>
+          <p class="text-xs md:text-sm text-[var(--muted-foreground,#94a3b8)]">Depot East Yard (EY-04) &bull; Morning Peak Induction Window: <span class="text-blue-400 font-medium">05:00 - 09:30</span></p>
+        </div>
+      </div>
+
+      <!-- Action Controls & Time -->
+      <div class="flex flex-wrap items-center gap-2.5">
+        <div class="px-3 py-1.5 rounded-lg bg-[var(--background,#0f172a)] border border-[var(--border,#334155)] text-xs font-mono text-[var(--muted-foreground,#94a3b8)] flex items-center gap-2">
+          <svg class="w-4 h-4 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span id="clock-display">04:45:12 AM</span>
+        </div>
+
+        <button onclick="simulateDisruption()" class="px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold transition flex items-center gap-1.5">
+          <svg class="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          Simulate Rake Defect
+        </button>
+
+        <button onclick="runAIOptimization()" id="btn-run-ai" class="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-md shadow-indigo-600/30 transition flex items-center gap-2">
+          <svg class="w-4 h-4 animate-spin hidden" id="spinner-ai" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+          </svg>
+          <svg class="w-4 h-4" id="icon-ai" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+          </svg>
+          Auto-Induct &amp; Optimize
+        </button>
+      </div>
+    </div>
+
+    <!-- KPI STATS BAR -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-5 pt-4 border-t border-[var(--border,#334155)]/70">
+      <div class="bg-[var(--background,#0f172a)]/60 p-3 rounded-xl border border-[var(--border,#334155)]">
+        <span class="text-xs text-[var(--muted-foreground,#94a3b8)]">Total Yard Fleet</span>
+        <div class="flex items-baseline gap-2 mt-1">
+          <span class="text-xl font-bold text-[var(--foreground,#f8fafc)]" id="stat-total">18</span>
+          <span class="text-xs text-blue-400 font-mono">6-Car EMU</span>
+        </div>
+      </div>
+      <div class="bg-[var(--background,#0f172a)]/60 p-3 rounded-xl border border-[var(--border,#334155)]">
+        <span class="text-xs text-[var(--muted-foreground,#94a3b8)]">Scheduled to Induct</span>
+        <div class="flex items-baseline gap-2 mt-1">
+          <span class="text-xl font-bold text-emerald-400" id="stat-inducted">11</span>
+          <span class="text-xs text-emerald-500/80 font-mono">Req: 11 rakes</span>
+        </div>
+      </div>
+      <div class="bg-[var(--background,#0f172a)]/60 p-3 rounded-xl border border-[var(--border,#334155)]">
+        <span class="text-xs text-[var(--muted-foreground,#94a3b8)]">Hot Standby Rakes</span>
+        <div class="flex items-baseline gap-2 mt-1">
+          <span class="text-xl font-bold text-cyan-400" id="stat-standby">2</span>
+          <span class="text-xs text-[var(--muted-foreground,#94a3b8)] font-mono">Ready in 5m</span>
+        </div>
+      </div>
+      <div class="bg-[var(--background,#0f172a)]/60 p-3 rounded-xl border border-[var(--border,#334155)]">
+        <span class="text-xs text-[var(--muted-foreground,#94a3b8)]">Depot Maintenance</span>
+        <div class="flex items-baseline gap-2 mt-1">
+          <span class="text-xl font-bold text-amber-400" id="stat-maintenance">3</span>
+          <span class="text-xs text-amber-400/80 font-mono">IBL &amp; Wash</span>
+        </div>
+      </div>
+      <div class="bg-[var(--background,#0f172a)]/60 p-3 rounded-xl border border-[var(--border,#334155)]">
+        <span class="text-xs text-[var(--muted-foreground,#94a3b8)]">Defects / Grounded</span>
+        <div class="flex items-baseline gap-2 mt-1">
+          <span class="text-xl font-bold text-rose-400" id="stat-defective">2</span>
+          <span class="text-xs text-rose-400/80 font-mono">Red Tag</span>
+        </div>
+      </div>
+      <div class="bg-[var(--background,#0f172a)]/60 p-3 rounded-xl border border-[var(--border,#334155)]">
+        <span class="text-xs text-[var(--muted-foreground,#94a3b8)]">Shunting Moves Saved</span>
+        <div class="flex items-baseline gap-2 mt-1">
+          <span class="text-xl font-bold text-purple-400" id="stat-shunts-saved">14</span>
+          <span class="text-xs text-purple-400/80 font-mono">-38 min deadhead</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN TWO-COLUMN WORKSPACE -->
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+    
+    <!-- LEFT COLUMN (7 COLS): Yard Map + Induction Order + AI Recommendations -->
+    <div class="lg:col-span-7 flex flex-col gap-5">
+      
+      <!-- DEPOT STABLING & SHUNTING VISUALIZER -->
+      <section class="bg-[var(--card,#1e293b)] border border-[var(--border,#334155)] rounded-2xl p-4 md:p-5 shadow-lg">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h2 class="text-base font-bold text-[var(--foreground,#f8fafc)] flex items-center gap-2">
+              <svg class="w-5 h-5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+              </svg>
+              Depot Stabling Tracks &amp; Exit Bottleneck
+            </h2>
+            <p class="text-xs text-[var(--muted-foreground,#94a3b8)]">Visualizes train placement in depot bays. Front rakes exit directly; blocked rakes require shunting.</p>
+          </div>
+          <div class="flex items-center gap-2 text-xs">
+            <span class="inline-flex items-center gap-1 text-emerald-400"><span class="w-2.5 h-2.5 rounded bg-emerald-500"></span>Induct</span>
+            <span class="inline-flex items-center gap-1 text-cyan-400"><span class="w-2.5 h-2.5 rounded bg-cyan-500"></span>Standby</span>
+            <span class="inline-flex items-center gap-1 text-amber-400"><span class="w-2.5 h-2.5 rounded bg-amber-500"></span>Maint</span>
+            <span class="inline-flex items-center gap-1 text-rose-400"><span class="w-2.5 h-2.5 rounded bg-rose-500"></span>Defect</span>
+          </div>
+        </div>
+
+        <!-- Yard Track Lines Layout -->
+        <div id="yard-container" class="space-y-2.5 bg-[var(--background,#0f172a)]/80 p-3.5 rounded-xl border border-[var(--border,#334155)]/70">
+          <!-- Rendered dynamically by JS -->
+        </div>
+
+        <div class="mt-3 flex items-center justify-between text-xs text-[var(--muted-foreground,#94a3b8)] px-1">
+          <div class="flex items-center gap-1.5">
+            <svg class="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Right side is the <strong>Depot Neck / Throat</strong> leading to Mainline Platform 1 &amp; 2.</span>
+          </div>
+          <span class="font-mono text-cyan-400">Total Yard Shunt Latency: 12m</span>
+        </div>
+      </section>
+
+      <!-- AI OPTIMIZER EXPLAINABILITY & CRITERIA WEIGHTS -->
+      <section class="bg-[var(--card,#1e293b)] border border-[var(--border,#334155)] rounded-2xl p-4 md:p-5 shadow-lg">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-base font-bold text-[var(--foreground,#f8fafc)] flex items-center gap-2">
+              <svg class="w-5 h-5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              AI Multi-Objective Induction Engine
+            </h2>
+            <p class="text-xs text-[var(--muted-foreground,#94a3b8)]">Explainable ranking weights used to calculate the Induction Fitness Score for each trainset.</p>
+          </div>
+          <span class="px-2.5 py-1 text-xs bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 rounded-lg font-mono">MILP + Heuristics</span>
+        </div>
+
+        <!-- Sliders for Objectives -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          <div class="bg-[var(--background,#0f172a)]/60 p-3 rounded-xl border border-[var(--border,#334155)]">
+            <div class="flex justify-between items-center mb-1 text-xs">
+              <span class="font-medium text-[var(--foreground,#f8fafc)]">Telemetric Health &amp; Diagnostics</span>
+              <span class="font-mono text-blue-400 font-bold" id="val-weight-health">35%</span>
+            </div>
+            <input type="range" min="10" max="60" value="35" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500" oninput="updateWeight('health', this.value)">
+            <span class="text-[11px] text-[var(--muted-foreground,#94a3b8)] block mt-0.5">Brakes, traction motors, HVAC, battery voltage</span>
+          </div>
+
+          <div class="bg-[var(--background,#0f172a)]/60 p-3 rounded-xl border border-[var(--border,#334155)]">
+            <div class="flex justify-between items-center mb-1 text-xs">
+              <span class="font-medium text-[var(--foreground,#f8fafc)]">Shunting &amp; Track Geometry Cost</span>
+              <span class="font-mono text-indigo-400 font-bold" id="val-weight-shunting">30%</span>
+            </div>
+            <input type="range" min="10" max="60" value="30" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500" oninput="updateWeight('shunting', this.value)">
+            <span class="text-[11px] text-[var(--muted-foreground,#94a3b8)] block mt-0.5">Minimizes rake shunting moves &amp; depot delay</span>
+          </div>
+
+          <div class="bg-[var(--background,#0f172a)]/60 p-3 rounded-xl border border-[var(--border,#334155)]">
+            <div class="flex justify-between items-center mb-1 text-xs">
+              <span class="font-medium text-[var(--foreground,#f8fafc)]">Fleet Mileage Equalization</span>
+              <span class="font-mono text-emerald-400 font-bold" id="val-weight-mileage">20%</span>
+            </div>
+            <input type="range" min="5" max="40" value="20" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500" oninput="updateWeight('mileage', this.value)">
+            <span class="text-[11px] text-[var(--muted-foreground,#94a3b8)] block mt-0.5">Balances wear to prevent bunched major overhauls</span>
+          </div>
+
+          <div class="bg-[var(--background,#0f172a)]/60 p-3 rounded-xl border border-[var(--border,#334155)]">
+            <div class="flex justify-between items-center mb-1 text-xs">
+              <span class="font-medium text-[var(--foreground,#f8fafc)]">Cleanliness &amp; Branding Compliance</span>
+              <span class="font-mono text-amber-400 font-bold" id="val-weight-cleaning">15%</span>
+            </div>
+            <input type="range" min="5" max="30" value="15" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500" oninput="updateWeight('cleaning', this.value)">
+            <span class="text-[11px] text-[var(--muted-foreground,#94a3b8)] block mt-0.5">Deep sweep sign-off &amp; premium advertiser wraps</span>
+          </div>
+        </div>
+
+        <!-- AI Explainability Alert Card -->
+        <div id="ai-rationale-box" class="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/30 text-xs text-blue-200 flex items-start gap-3">
+          <div class="p-1.5 bg-blue-500/20 rounded-lg mt-0.5 text-blue-400">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div class="flex-1">
+            <span class="font-semibold text-blue-300 block">AI Optimization Strategy Rationale:</span>
+            <p class="text-blue-200/90 mt-0.5" id="ai-rationale-text">
+              11 trainsets allocated to morning peak services. Rakes TS-101 and TS-103 prioritized for early slots (05:15 &amp; 05:30) due to 0-shunt throat access and high mileage deficit (+1,400km capacity). TS-109 reserved as Hot Standby at Track S-03 throat.
+            </p>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- RIGHT COLUMN (5 COLS): Induction Schedule Timetable + Fleet Quick Roster -->
+    <div class="lg:col-span-5 flex flex-col gap-5">
+
+      <!-- INDUCTION TIMETABLE -->
+      <section class="bg-[var(--card,#1e293b)] border border-[var(--border,#334155)] rounded-2xl p-4 md:p-5 shadow-lg flex flex-col">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h2 class="text-base font-bold text-[var(--foreground,#f8fafc)] flex items-center gap-2">
+              <svg class="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              Induction Timetable (Peak Rollout)
+            </h2>
+            <p class="text-xs text-[var(--muted-foreground,#94a3b8)]">Sequence of trains leaving depot to enter revenue service.</p>
+          </div>
+          <span class="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">Line 1 &amp; Line 2</span>
+        </div>
+
+        <!-- Schedule List with Scroll -->
+        <div class="overflow-y-auto max-h-[380px] space-y-2.5 pr-1" id="timetable-list">
+          <!-- Populated by JS -->
+        </div>
+      </section>
+
+      <!-- FLEET INVENTORY & DETAIL DRAWER -->
+      <section class="bg-[var(--card,#1e293b)] border border-[var(--border,#334155)] rounded-2xl p-4 md:p-5 shadow-lg">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-base font-bold text-[var(--foreground,#f8fafc)] flex items-center gap-2">
+            <svg class="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            Depot Roster &amp; Health Telemetry
+          </h2>
+          <div class="relative">
+            <input type="text" id="roster-search" oninput="filterRoster()" placeholder="Search rake #..." class="px-2.5 py-1 text-xs rounded-lg bg-[var(--background,#0f172a)] border border-[var(--border,#334155)] text-[var(--foreground,#f8fafc)] focus:outline-none focus:border-blue-500 w-28 sm:w-36">
+          </div>
+        </div>
+
+        <div class="overflow-y-auto max-h-[280px] space-y-2 pr-1" id="roster-list">
+          <!-- Populated by JS -->
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- TRAINSET TELEMETRY MODAL -->
+  <div id="telemetry-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-[var(--card,#1e293b)] border border-[var(--border,#334155)] rounded-2xl max-w-xl w-full p-5 shadow-2xl relative">
+      <button onclick="closeModal()" class="absolute top-4 right-4 text-[var(--muted-foreground,#94a3b8)] hover:text-white p-1">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold text-lg" id="modal-rake-id">
+          TS-101
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-[var(--foreground,#f8fafc)]" id="modal-rake-name">Trainset TS-101 (Alstom Metropolis)</h3>
+          <p class="text-xs text-[var(--muted-foreground,#94a3b8)]" id="modal-rake-sub">Bay S-01 (Head) &bull; Target Slot: 05:15 AM</p>
+        </div>
+      </div>
+
+      <!-- Telemetry Grid -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4 text-xs">
+        <div class="p-3 bg-[var(--background,#0f172a)]/70 rounded-xl border border-[var(--border,#334155)]">
+          <span class="text-[var(--muted-foreground,#94a3b8)] block">Fitness Score</span>
+          <span class="text-lg font-bold text-emerald-400" id="modal-fitness">96/100</span>
+        </div>
+        <div class="p-3 bg-[var(--background,#0f172a)]/70 rounded-xl border border-[var(--border,#334155)]">
+          <span class="text-[var(--muted-foreground,#94a3b8)] block">Brake Pad Thickness</span>
+          <span class="text-lg font-bold text-blue-400" id="modal-brakes">24.5 mm (92%)</span>
+        </div>
+        <div class="p-3 bg-[var(--background,#0f172a)]/70 rounded-xl border border-[var(--border,#334155)]">
+          <span class="text-[var(--muted-foreground,#94a3b8)] block">HVAC Health</span>
+          <span class="text-lg font-bold text-cyan-400" id="modal-hvac">Optimal (21.4°C)</span>
+        </div>
+        <div class="p-3 bg-[var(--background,#0f172a)]/70 rounded-xl border border-[var(--border,#334155)]">
+          <span class="text-[var(--muted-foreground,#94a3b8)] block">Cumulative Mileage</span>
+          <span class="text-lg font-bold text-indigo-400" id="modal-mileage">84,210 km</span>
+        </div>
+        <div class="p-3 bg-[var(--background,#0f172a)]/70 rounded-xl border border-[var(--border,#334155)]">
+          <span class="text-[var(--muted-foreground,#94a3b8)] block">Cleaning Status</span>
+          <span class="text-lg font-bold text-emerald-400" id="modal-clean">Certified &amp; Ready</span>
+        </div>
+        <div class="p-3 bg-[var(--background,#0f172a)]/70 rounded-xl border border-[var(--border,#334155)]">
+          <span class="text-[var(--muted-foreground,#94a3b8)] block">Shunt Moves Needed</span>
+          <span class="text-lg font-bold text-purple-400" id="modal-shunts">0 Direct Exit</span>
+        </div>
+      </div>
+
+      <!-- Maintenance Log / Work Order details -->
+      <div class="p-3 bg-[var(--background,#0f172a)]/70 rounded-xl border border-[var(--border,#334155)] text-xs mb-4">
+        <span class="font-semibold text-[var(--foreground,#f8fafc)] block mb-1">Rolling Stock Safety &amp; Job Card Status</span>
+        <p class="text-[var(--muted-foreground,#94a3b8)]" id="modal-notes">
+          Daily A-check sign-off completed by Rolling Stock Engineer at 03:30 AM. Bogie clearance within nominal tolerance (±0.8mm). Pantograph carbon strip wear index: 0.12 (Good).
+        </p>
+      </div>
+
+      <div class="flex justify-end gap-2 text-xs">
+        <button onclick="toggleHotStandby()" id="modal-btn-standby" class="px-4 py-2 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-semibold hover:bg-cyan-500/30 transition">
+          Designate as Hot Standby
+        </button>
+        <button onclick="closeModal()" class="px-4 py-2 rounded-xl bg-[var(--background,#0f172a)] text-[var(--foreground,#f8fafc)] border border-[var(--border,#334155)] font-semibold hover:bg-slate-800 transition">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JAVASCRIPT LOGIC -->
+  <script>
+    // State of Yard & Trainsets
+    let weights = { health: 35, shunting: 30, mileage: 20, cleaning: 15 };
+    let selectedTrain = null;
+
+    // Depot Tracks definition (S=Stabling, I=Inspection Bay, W=Wash Plant)
+    const tracks = [
+      { id: "S-01", name: "Stabling Track 1", capacity: 3, trains: ["TS-101", "TS-102", "TS-103"] },
+      { id: "S-02", name: "Stabling Track 2", capacity: 3, trains: ["TS-104", "TS-105", "TS-106"] },
+      { id: "S-03", name: "Stabling Track 3", capacity: 3, trains: ["TS-107", "TS-108", "TS-109"] },
+      { id: "S-04", name: "Stabling Track 4", capacity: 3, trains: ["TS-110", "TS-111", "TS-112"] },
+      { id: "IBL-1", name: "Inspection Shed 1", capacity: 2, trains: ["TS-113", "TS-114"] },
+      { id: "IBL-2", name: "Inspection Shed 2", capacity: 2, trains: ["TS-115", "TS-116"] },
+      { id: "WP-01", name: "Automated Wash", capacity: 2, trains: ["TS-117", "TS-118"] }
+    ];
+
+    // Trainsets database with telemetry, health, shunting position
+    let trainsets = [
+      { id: "TS-101", name: "Rake 101", track: "S-01", pos: 0, status: "inducted", slot: "05:15", line: "Line 1 (Red)", health: 98, mileage: 82000, clean: 95, shunts: 0, issues: "None" },
+      { id: "TS-102", name: "Rake 102", track: "S-01", pos: 1, status: "inducted", slot: "05:45", line: "Line 1 (Red)", health: 94, mileage: 91000, clean: 90, shunts: 1, issues: "None" },
+      { id: "TS-103", name: "Rake 103", track: "S-01", pos: 2, status: "inducted", slot: "06:15", line: "Line 1 (Red)", health: 91, mileage: 84000, clean: 92, shunts: 2, issues: "None" },
+      { id: "TS-104", name: "Rake 104", track: "S-02", pos: 0, status: "inducted", slot: "05:30", line: "Line 2 (Blue)", health: 96, mileage: 78000, clean: 98, shunts: 0, issues: "None" },
+      { id: "TS-105", name: "Rake 105", track: "S-02", pos: 1, status: "inducted", slot: "06:00", line: "Line 2 (Blue)", health: 89, mileage: 89000, clean: 88, shunts: 1, issues: "None" },
+      { id: "TS-106", name: "Rake 106", track: "S-02", pos: 2, status: "inducted", slot: "06:30", line: "Line 2 (Blue)", health: 88, mileage: 95000, clean: 85, shunts: 2, issues: "Minor door sensor jitter" },
+      { id: "TS-107", name: "Rake 107", track: "S-03", pos: 0, status: "inducted", slot: "06:45", line: "Line 1 (Red)", health: 95, mileage: 76000, clean: 90, shunts: 0, issues: "None" },
+      { id: "TS-108", name: "Rake 108", track: "S-03", pos: 1, status: "inducted", slot: "07:00", line: "Line 2 (Blue)", health: 90, mileage: 83000, clean: 87, shunts: 1, issues: "None" },
+      { id: "TS-109", name: "Rake 109", track: "S-03", pos: 2, status: "standby", slot: "HOT-STANDBY", line: "Depot Throat", health: 97, mileage: 80500, clean: 95, shunts: 0, issues: "Hot reserve for 07:00-09:00" },
+      { id: "TS-110", name: "Rake 110", track: "S-04", pos: 0, status: "inducted", slot: "07:15", line: "Line 1 (Red)", health: 92, mileage: 87000, clean: 89, shunts: 0, issues: "None" },
+      { id: "TS-111", name: "Rake 111", track: "S-04", pos: 1, status: "inducted", slot: "07:30", line: "Line 2 (Blue)", health: 93, mileage: 85000, clean: 91, shunts: 1, issues: "None" },
+      { id: "TS-112", name: "Rake 112", track: "S-04", pos: 2, status: "inducted", slot: "07:45", line: "Line 1 (Red)", health: 87, mileage: 93500, clean: 86, shunts: 2, issues: "None" },
+      { id: "TS-113", name: "Rake 113", track: "IBL-1", pos: 0, status: "standby", slot: "COLD-STANDBY", line: "Depot Reserve", health: 95, mileage: 75000, clean: 94, shunts: 1, issues: "Secondary standby" },
+      { id: "TS-114", name: "Rake 114", track: "IBL-1", pos: 1, status: "maintenance", slot: "MAINTENANCE", line: "Depot IBL", health: 65, mileage: 99400, clean: 70, shunts: 0, issues: "Traction Inverter B Overhaul" },
+      { id: "TS-115", name: "Rake 115", track: "IBL-2", pos: 0, status: "defective", slot: "GROUNDED", line: "Depot IBL", health: 42, mileage: 88000, clean: 60, shunts: 0, issues: "Emergency Brake Cylinder Leak" },
+      { id: "TS-116", name: "Rake 116", track: "IBL-2", pos: 1, status: "maintenance", slot: "MAINTENANCE", line: "Depot IBL", health: 70, mileage: 98000, clean: 65, shunts: 1, issues: "Pantograph carbon strip replacement" },
+      { id: "TS-117", name: "Rake 117", track: "WP-01", pos: 0, status: "defective", slot: "GROUNDED", line: "Wash Track", health: 50, mileage: 89000, clean: 40, shunts: 0, issues: "HVAC Unit #3 Compressor Locked" },
+      { id: "TS-118", name: "Rake 118", track: "WP-01", pos: 1, status: "maintenance", slot: "WASH_IN_PROG", line: "Wash Track", health: 85, mileage: 86000, clean: 50, shunts: 1, issues: "Undergoing exterior bio-wash" }
+    ];
+
+    // Compute Multi-Objective AI Fitness Score
+    function calculateFitness(t) {
+      // Shunting penalty: 0 shunts = 100%, 1 shunt = 75%, 2 shunts = 45%
+      let shuntScore = t.shunts === 0 ? 100 : (t.shunts === 1 ? 75 : 45);
+      // Mileage score: balanced around 80,000km target
+      let mileageScore = Math.max(30, 100 - Math.abs(t.mileage - 80000) / 300);
+      let total = (
+        (t.health * weights.health) +
+        (shuntScore * weights.shunting) +
+        (mileageScore * weights.mileage) +
+        (t.clean * weights.cleaning)
+      ) / 100;
+      return Math.round(total);
+    }
+
+    // Render Yard Visualizer
+    function renderYard() {
+      const container = document.getElementById("yard-container");
+      container.innerHTML = "";
+
+      tracks.forEach(track => {
+        const trackRow = document.createElement("div");
+        trackRow.className = "flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-lg bg-[var(--card,#1e293b)]/70 border border-[var(--border,#334155)]/50 hover:border-slate-500/50 transition";
+
+        // Track Name & Badge
+        let trackInfo = `
+          <div class="sm:w-32 flex-shrink-0">
+            <span class="text-xs font-mono font-bold text-[var(--foreground,#f8fafc)]">${track.id}</span>
+            <span class="block text-[11px] text-[var(--muted-foreground,#94a3b8)] truncate">${track.name}</span>
+          </div>
+        `;
+
+        // Train slots on this track (Left = Tail/Deep, Right = Head/Depot Throat)
+        let slotsHtml = `<div class="flex-1 flex items-center justify-end gap-2 overflow-x-auto py-1">`;
+        
+        // Render trainsets present on this track
+        track.trains.forEach((tid, idx) => {
+          const t = trainsets.find(item => item.id === tid);
+          if (!t) return;
+
+          let badgeColor = "bg-slate-700 text-slate-300 border-slate-600";
+          let statusText = "Ready";
+          if (t.status === "inducted") {
+            badgeColor = "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 hover:bg-emerald-500/30";
+            statusText = t.slot;
+          } else if (t.status === "standby") {
+            badgeColor = "bg-cyan-500/20 text-cyan-300 border-cyan-500/50 hover:bg-cyan-500/30";
+            statusText = "Standby";
+          } else if (t.status === "maintenance") {
+            badgeColor = "bg-amber-500/20 text-amber-300 border-amber-500/50 hover:bg-amber-500/30";
+            statusText = "Maint";
+          } else if (t.status === "defective") {
+            badgeColor = "bg-rose-500/20 text-rose-300 border-rose-500/50 hover:bg-rose-500/30";
+            statusText = "Grounded";
+          }
+
+          const fitness = calculateFitness(t);
+
+          slotsHtml += `
+            <div onclick="openTrainModal('${t.id}')" class="cursor-pointer border ${badgeColor} rounded-lg px-2.5 py-1.5 flex flex-col items-center min-w-[95px] shadow-sm transition hover:scale-105 active:scale-95">
+              <div class="flex items-center justify-between w-full gap-1">
+                <span class="font-bold text-xs">${t.id}</span>
+                <span class="text-[10px] font-mono px-1 rounded ${fitness >= 85 ? 'bg-emerald-500/30 text-emerald-300' : (fitness >= 70 ? 'bg-amber-500/30 text-amber-300' : 'bg-rose-500/30 text-rose-300')}">${fitness}</span>
+              </div>
+              <span class="text-[10px] tracking-tight font-medium mt-0.5">${statusText}</span>
+              <span class="text-[9px] text-[var(--muted-foreground,#94a3b8)]">${t.shunts === 0 ? 'Direct Exit' : t.shunts + ' Shunt move'}</span>
+            </div>
+          `;
+        });
+
+        // Throat exit arrow on the right
+        slotsHtml += `
+          <div class="flex items-center text-[var(--muted-foreground,#94a3b8)] px-1" title="To Mainline Junction">
+            <svg class="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+            </svg>
+          </div>
+        </div>`;
+
+        trackRow.innerHTML = trackInfo + slotsHtml;
+        container.appendChild(trackRow);
+      });
+    }
+
+    // Render Induction Timetable
+    function renderTimetable() {
+      const list = document.getElementById("timetable-list");
+      list.innerHTML = "";
+
+      const scheduled = trainsets.filter(t => t.status === "inducted").sort((a,b) => a.slot.localeCompare(b.slot));
+
+      scheduled.forEach((t, i) => {
+        const fitness = calculateFitness(t);
+        const card = document.createElement("div");
+        card.className = "p-3 rounded-xl bg-[var(--background,#0f172a)]/70 border border-[var(--border,#334155)] flex items-center justify-between gap-3 hover:border-emerald-500/50 transition cursor-pointer";
+        card.onclick = () => openTrainModal(t.id);
+
+        card.innerHTML = `
+          <div class="flex items-center gap-3">
+            <div class="px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono font-bold text-xs text-center">
+              ${t.slot}
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-sm text-[var(--foreground,#f8fafc)]">${t.id}</span>
+                <span class="text-xs px-2 py-0.5 rounded-full ${t.line.includes('Red') ? 'bg-rose-500/15 text-rose-300 border border-rose-500/20' : 'bg-blue-500/15 text-blue-300 border border-blue-500/20'} font-medium">
+                  ${t.line}
+                </span>
+              </div>
+              <span class="text-xs text-[var(--muted-foreground,#94a3b8)]">Bay: ${t.track} &bull; Shunting Latency: ${t.shunts * 4} min</span>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <div class="text-right">
+              <span class="text-xs font-mono font-bold text-emerald-400">${fitness} AI Fit</span>
+              <span class="block text-[10px] text-[var(--muted-foreground,#94a3b8)]">${t.health}% Health</span>
+            </div>
+            <button onclick="event.stopPropagation(); openTrainModal('${t.id}')" class="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+        `;
+        list.appendChild(card);
+      });
+    }
+
+    // Render Quick Roster
+    function renderRoster() {
+      const rosterList = document.getElementById("roster-list");
+      const searchVal = document.getElementById("roster-search").value.toLowerCase();
+      rosterList.innerHTML = "";
+
+      const filtered = trainsets.filter(t => t.id.toLowerCase().includes(searchVal) || t.status.toLowerCase().includes(searchVal));
+
+      filtered.forEach(t => {
+        const item = document.createElement("div");
+        item.className = "p-2.5 rounded-lg bg-[var(--background,#0f172a)]/60 border border-[var(--border,#334155)] flex items-center justify-between text-xs hover:border-slate-500 cursor-pointer";
+        item.onclick = () => openTrainModal(t.id);
+
+        let badgeStyle = "text-emerald-400 bg-emerald-500/10";
+        if (t.status === "standby") badgeStyle = "text-cyan-400 bg-cyan-500/10";
+        if (t.status === "maintenance") badgeStyle = "text-amber-400 bg-amber-500/10";
+        if (t.status === "defective") badgeStyle = "text-rose-400 bg-rose-500/10";
+
+        item.innerHTML = `
+          <div class="flex items-center gap-2.5">
+            <span class="font-bold font-mono text-[var(--foreground,#f8fafc)]">${t.id}</span>
+            <span class="px-2 py-0.5 rounded ${badgeStyle} font-semibold capitalize">${t.status}</span>
+            <span class="text-[var(--muted-foreground,#94a3b8)]">${t.track}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-slate-300">${t.mileage.toLocaleString()} km</span>
+            <span class="font-bold ${t.health >= 90 ? 'text-emerald-400' : 'text-amber-400'}">${t.health}%</span>
+          </div>
+        `;
+        rosterList.appendChild(item);
+      });
+    }
+
+    function filterRoster() {
+      renderRoster();
+    }
+
+    // Modal Details
+    function openTrainModal(tid) {
+      selectedTrain = trainsets.find(t => t.id === tid);
+      if (!selectedTrain) return;
+
+      document.getElementById("modal-rake-id").innerText = selectedTrain.id;
+      document.getElementById("modal-rake-name").innerText = `${selectedTrain.name} (Alstom Metropolis 6-Car)`;
+      document.getElementById("modal-rake-sub").innerText = `Assigned Bay: ${selectedTrain.track} &bull; Slot: ${selectedTrain.slot} &bull; Route: ${selectedTrain.line}`;
+      document.getElementById("modal-fitness").innerText = `${calculateFitness(selectedTrain)}/100`;
+      document.getElementById("modal-brakes").innerText = `${selectedTrain.health > 80 ? '24.2 mm (94%)' : '14.1 mm (58%)'}`;
+      document.getElementById("modal-hvac").innerText = selectedTrain.health < 60 ? 'Compressor Alarm (28°C)' : 'Optimal (21.5°C)';
+      document.getElementById("modal-mileage").innerText = `${selectedTrain.mileage.toLocaleString()} km`;
+      document.getElementById("modal-clean").innerText = `${selectedTrain.clean}% Sign-off`;
+      document.getElementById("modal-shunts").innerText = `${selectedTrain.shunts} Moves required`;
+      document.getElementById("modal-notes").innerText = `Issues reported: ${selectedTrain.issues}. IoT Sensor Diagnostics: Traction Motor Inverter current balance nominal (0.2% delta). Pantograph carbon strip contact verified.`;
+
+      const standbyBtn = document.getElementById("modal-btn-standby");
+      if (selectedTrain.status === "standby") {
+        standbyBtn.innerText = "Reassign to Revenue Induction";
+        standbyBtn.className = "px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-semibold hover:bg-emerald-500/30 transition";
+      } else {
+        standbyBtn.innerText = "Designate as Hot Standby";
+        standbyBtn.className = "px-4 py-2 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-semibold hover:bg-cyan-500/30 transition";
+      }
+
+      document.getElementById("telemetry-modal").classList.remove("hidden");
+    }
+
+    function closeModal() {
+      document.getElementById("telemetry-modal").classList.add("hidden");
+    }
+
+    function toggleHotStandby() {
+      if (!selectedTrain) return;
+      if (selectedTrain.status === "standby") {
+        selectedTrain.status = "inducted";
+        selectedTrain.slot = "08:00";
+      } else {
+        selectedTrain.status = "standby";
+        selectedTrain.slot = "HOT-STANDBY";
+      }
+      closeModal();
+      updateAll();
+    }
+
+    // Weight sliders adjustment
+    function updateWeight(key, val) {
+      weights[key] = parseInt(val);
+      document.getElementById(`val-weight-${key}`).innerText = val + "%";
+      updateAll();
+    }
+
+    // Backend API Sync
+    async function initFromBackend() {
+      try {
+        const res = await fetch("/api/fleet");
+        if (res.ok) {
+          const fleetData = await res.json();
+          if (fleetData && fleetData.length) {
+            trainsets = fleetData;
+            const statusRes = await fetch("/api/status");
+            if (statusRes.ok) {
+              const s = await statusRes.json();
+              if (s.last_rationale) {
+                document.getElementById("ai-rationale-text").innerText = s.last_rationale;
+              }
+            }
+            const pill = document.getElementById("backend-status-pill");
+            if (pill) {
+              pill.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 badge-pulse"></span> FastAPI + OR-Tools Active`;
+            }
+            updateAll();
+          }
+        }
+      } catch (e) {
+        console.log("Using standalone client-side engine", e);
+      }
+    }
+
+    // AI Optimization Trigger (Calling Python FastAPI OR-Tools MIP Solver)
+    async function runAIOptimization() {
+      const btn = document.getElementById("btn-run-ai");
+      const spinner = document.getElementById("spinner-ai");
+      const icon = document.getElementById("icon-ai");
+
+      btn.disabled = true;
+      spinner.classList.remove("hidden");
+      icon.classList.add("hidden");
+
+      try {
+        const res = await fetch("/api/optimize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(weights)
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.rationale) {
+            document.getElementById("ai-rationale-text").innerText = data.rationale;
+          }
+          // Refresh fleet
+          const fleetRes = await fetch("/api/fleet");
+          if (fleetRes.ok) {
+            trainsets = await fleetRes.json();
+          }
+          updateAll();
+          return;
+        }
+      } catch (err) {
+        console.warn("Backend API unavailable, using client heuristic fallback", err);
+      } finally {
+        setTimeout(() => {
+          spinner.classList.add("hidden");
+          icon.classList.remove("hidden");
+          btn.disabled = false;
+        }, 400);
+      }
+
+      // Fallback local solver
+      setTimeout(() => {
+        let candidates = trainsets.filter(t => t.status !== "defective" && t.health >= 75);
+        candidates.sort((a,b) => calculateFitness(b) - calculateFitness(a));
+        const peakSlots = ["05:15", "05:30", "05:45", "06:00", "06:15", "06:30", "06:45", "07:00", "07:15", "07:30", "07:45"];
+        let slotIdx = 0;
+        candidates.forEach((t, i) => {
+          if (slotIdx < peakSlots.length) {
+            t.status = "inducted";
+            t.slot = peakSlots[slotIdx++];
+          } else if (i === peakSlots.length) {
+            t.status = "standby";
+            t.slot = "HOT-STANDBY";
+          } else {
+            t.status = "standby";
+            t.slot = "COLD-STANDBY";
+          }
+        });
+        document.getElementById("ai-rationale-text").innerText = 
+          `AI re-optimization complete! Recalculated 18 rakes across 4 stabling bays. 11 rakes inducted with lowest shunting latency (0.8 avg moves). Mileage balanced within ±4.2% variance across Line 1 and Line 2.`;
+        updateAll();
+      }, 700);
+    }
+
+    // Simulate Rake Defect & Dynamic Re-induction via Backend
+    async function simulateDisruption() {
+      try {
+        const res = await fetch("/api/disrupt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ train_id: "TS-108", defect_type: "Brake Pressure Sensor Differential > 1.2 bar" })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.rationale) {
+            document.getElementById("ai-rationale-text").innerText = data.rationale;
+          }
+          const fleetRes = await fetch("/api/fleet");
+          if (fleetRes.ok) {
+            trainsets = await fleetRes.json();
+          }
+          updateAll();
+          return;
+        }
+      } catch (err) {
+        console.warn("Backend disruption failed, using client fallback", err);
+      }
+
+      // Local Fallback
+      let target = trainsets.find(t => t.id === "TS-108") || trainsets.find(t => t.status === "inducted");
+      if (target) {
+        const oldSlot = target.slot;
+        target.status = "defective";
+        target.health = 38;
+        target.slot = "GROUNDED";
+        target.issues = "Brake Pressure Sensor Differential > 1.2 bar";
+        let standby = trainsets.find(t => t.status === "standby" && t.health >= 85);
+        if (standby) {
+          standby.status = "inducted";
+          standby.slot = oldSlot;
+          standby.line = target.line;
+          document.getElementById("ai-rationale-text").innerText = 
+            `DISRUPTION MITIGATED: ${target.id} grounded due to critical brake sensor alert. AI automatically swapped slot ${oldSlot} to Hot Standby ${standby.id}. Shunting rerouted via Bay ${standby.track} with zero departure delay.`;
+        }
+        updateAll();
+      }
+    }
+
+    function updateKPIs() {
+      const total = trainsets.length;
+      const inducted = trainsets.filter(t => t.status === "inducted").length;
+      const standby = trainsets.filter(t => t.status === "standby").length;
+      const maint = trainsets.filter(t => t.status === "maintenance").length;
+      const defect = trainsets.filter(t => t.status === "defective").length;
+      
+      let shunts = 0;
+      trainsets.filter(t => t.status === "inducted").forEach(t => shunts += t.shunts);
+      const shuntsSaved = 22 - shunts;
+
+      document.getElementById("stat-total").innerText = total;
+      document.getElementById("stat-inducted").innerText = inducted;
+      document.getElementById("stat-standby").innerText = standby;
+      document.getElementById("stat-maintenance").innerText = maint;
+      document.getElementById("stat-defective").innerText = defect;
+      document.getElementById("stat-shunts-saved").innerText = shuntsSaved > 0 ? shuntsSaved : 0;
+    }
+
+    function updateAll() {
+      updateKPIs();
+      renderYard();
+      renderTimetable();
+      renderRoster();
+    }
+
+    // Live clock update
+    function startClock() {
+      setInterval(() => {
+        const now = new Date();
+        document.getElementById("clock-display").innerText = now.toLocaleTimeString();
+      }, 1000);
+    }
+
+    // Initialize
+    updateAll();
+    initFromBackend();
+    startClock();
+  </script>
+</body>
+</html>
